@@ -2,10 +2,13 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from claude_code_transcripts import find_cowork_sessions, parse_session_file
+from click.testing import CliRunner
+
+from claude_code_transcripts import cli, find_cowork_sessions, parse_session_file
 
 
 def make_cowork_session(
@@ -171,3 +174,38 @@ def test_cowork_jsonl_parses_with_queue_operation(tmp_path):
     assert loglines[1]["type"] == "assistant"
     # Content should be correct
     assert loglines[0]["message"]["content"] == "Hello cowork"
+
+
+def test_cowork_command_passes_cowork_label(tmp_path):
+    """The cowork command passes transcript_label='Claude Cowork' to generate_html."""
+    _, jsonl_file = make_cowork_session(
+        tmp_path,
+        process_name="test-process",
+        cli_session_id="cli-label",
+        title="Label Test",
+    )
+    output_dir = tmp_path / "output"
+    session = {
+        "title": "Label Test",
+        "jsonl_path": jsonl_file,
+        "folders": ["/test"],
+        "mtime": 1700000000.0,
+    }
+
+    runner = CliRunner()
+    with (
+        patch("claude_code_transcripts.find_cowork_sessions") as mock_find,
+        patch("claude_code_transcripts.questionary") as mock_q,
+        patch("claude_code_transcripts.generate_html") as mock_gen,
+    ):
+        mock_find.return_value = [session]
+        mock_q.select.return_value.ask.return_value = session
+        result = runner.invoke(
+            cli,
+            ["cowork", "-o", str(output_dir)],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_gen.assert_called_once()
+    call_kwargs = mock_gen.call_args
+    assert call_kwargs.kwargs.get("transcript_label") == "Claude Cowork"
