@@ -8,7 +8,9 @@ import pytest
 
 from click.testing import CliRunner
 
-from claude_code_transcripts import cli, find_cowork_sessions, parse_session_file
+from claude_code_transcripts import cli
+from claude_code_transcripts.sessions import find_cowork_sessions
+from claude_code_transcripts.parser import parse_session_file
 
 
 def make_cowork_session(
@@ -65,6 +67,18 @@ def make_cowork_session(
     jsonl_file.write_text(jsonl_content)
 
     return metadata_file, jsonl_file
+
+
+def test_find_cowork_sessions_default_path_uses_platformdirs(tmp_path):
+    """Default base_dir is derived from platformdirs.user_data_dir."""
+    fake_data_dir = str(tmp_path / "Claude")
+
+    with patch(
+        "claude_code_transcripts.sessions.user_data_dir", return_value=fake_data_dir
+    ):
+        result = find_cowork_sessions()
+
+    assert result == []  # directory doesn't exist, so returns []
 
 
 def test_find_cowork_sessions_empty(tmp_path):
@@ -165,8 +179,7 @@ def test_cowork_jsonl_parses_with_queue_operation(tmp_path):
     jsonl_file = tmp_path / "session.jsonl"
     jsonl_file.write_text(jsonl_content)
 
-    data = parse_session_file(jsonl_file)
-    loglines = data["loglines"]
+    loglines = parse_session_file(jsonl_file)
 
     # queue-operation should be filtered out
     assert len(loglines) == 2
@@ -174,6 +187,56 @@ def test_cowork_jsonl_parses_with_queue_operation(tmp_path):
     assert loglines[1]["type"] == "assistant"
     # Content should be correct
     assert loglines[0]["message"]["content"] == "Hello cowork"
+
+
+def test_parse_jsonl_skips_is_meta(tmp_path):
+    """User entries with isMeta=true are treated as system messages and skipped."""
+    jsonl_content = (
+        '{"type":"user","timestamp":"2025-01-01T10:00:00.000Z","isMeta":true,"message":{"role":"user","content":"system meta message"}}\n'
+        '{"type":"user","timestamp":"2025-01-01T10:00:01.000Z","message":{"role":"user","content":"Hello"}}\n'
+        '{"type":"assistant","timestamp":"2025-01-01T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}\n'
+    )
+    jsonl_file = tmp_path / "session.jsonl"
+    jsonl_file.write_text(jsonl_content)
+
+    loglines = parse_session_file(jsonl_file)
+
+    assert len(loglines) == 2
+    assert loglines[0]["message"]["content"] == "Hello"
+    assert loglines[1]["type"] == "assistant"
+
+
+def test_parse_jsonl_uses_audit_timestamp_fallback(tmp_path):
+    """Entries without 'timestamp' fall back to '_audit_timestamp'."""
+    jsonl_content = (
+        '{"type":"user","_audit_timestamp":"2025-01-01T10:00:00.000Z","message":{"role":"user","content":"Hello"}}\n'
+        '{"type":"assistant","_audit_timestamp":"2025-01-01T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}\n'
+    )
+    jsonl_file = tmp_path / "session.jsonl"
+    jsonl_file.write_text(jsonl_content)
+
+    loglines = parse_session_file(jsonl_file)
+
+    assert len(loglines) == 2
+    assert loglines[0]["timestamp"] == "2025-01-01T10:00:00.000Z"
+    assert loglines[1]["timestamp"] == "2025-01-01T10:00:05.000Z"
+
+
+def test_parse_jsonl_skips_is_synthetic(tmp_path):
+    """User entries with isSynthetic=true are treated as system messages and skipped."""
+    jsonl_content = (
+        '{"type":"user","timestamp":"2025-01-01T10:00:00.000Z","isSynthetic":true,"message":{"role":"user","content":"synthetic message"}}\n'
+        '{"type":"user","timestamp":"2025-01-01T10:00:01.000Z","message":{"role":"user","content":"Real message"}}\n'
+        '{"type":"assistant","timestamp":"2025-01-01T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}\n'
+    )
+    jsonl_file = tmp_path / "session.jsonl"
+    jsonl_file.write_text(jsonl_content)
+
+    loglines = parse_session_file(jsonl_file)
+
+    assert len(loglines) == 2
+    assert loglines[0]["message"]["content"] == "Real message"
+    assert loglines[1]["type"] == "assistant"
 
 
 def test_cowork_command_passes_cowork_label(tmp_path):
@@ -194,9 +257,9 @@ def test_cowork_command_passes_cowork_label(tmp_path):
 
     runner = CliRunner()
     with (
-        patch("claude_code_transcripts.find_cowork_sessions") as mock_find,
-        patch("claude_code_transcripts.questionary") as mock_q,
-        patch("claude_code_transcripts.generate_html") as mock_gen,
+        patch("claude_code_transcripts.cli.find_cowork_sessions") as mock_find,
+        patch("claude_code_transcripts.cli.questionary") as mock_q,
+        patch("claude_code_transcripts.cli.generate_html") as mock_gen,
     ):
         mock_find.return_value = [session]
         mock_q.select.return_value.ask.return_value = session
