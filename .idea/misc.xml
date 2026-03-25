@@ -5,6 +5,9 @@
     <option name="USE_PROJECT_LEVEL_SETTINGS" value="false" />
     <list size="0" />
   </component>
+  <component name="Black">
+    <option name="sdkName" value="uv (claude-code-transcripts)" />
+  </component>
   <component name="DiscordProjectSettings">
     <option name="show" value="ASK" />
     <option name="description" value="" />
@@ -74,7 +77,7 @@
       </profile-state>
     </entry>
   </component>
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_17" project-jdk-name="jbr-21" project-jdk-type="JavaSDK">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_17" default="true" project-jdk-name="uv (claude-code-transcripts)" project-jdk-type="Python SDK">
     <output url="file://$PROJECT_DIR$/out" />
   </component>
   <component name="SuppressionsComponent">
