@@ -1305,13 +1305,20 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test local session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 
@@ -1341,13 +1348,20 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test default session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 
@@ -1487,13 +1501,20 @@ class TestOutputAutoOption:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test local session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 

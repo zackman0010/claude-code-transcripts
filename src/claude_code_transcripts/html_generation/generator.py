@@ -40,6 +40,7 @@ class Session:
     session_dir: Path
     loglines: list = field(default_factory=list)
     size_kb: float = 0.0
+    transcript_label: str = "Claude Code"
 
 
 @dataclass
@@ -338,7 +339,11 @@ def generate_batch_html(projects, output_dir, progress_callback=None):
 
         for session in project.sessions:
             try:
-                generate_html(session.loglines, session.session_dir)
+                generate_html(
+                    session.loglines,
+                    session.session_dir,
+                    transcript_label=session.transcript_label,
+                )
                 successful_sessions += 1
             except Exception as e:
                 failed_sessions.append(

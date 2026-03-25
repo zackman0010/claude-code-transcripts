@@ -127,7 +127,7 @@ def find_local_sessions(folder, limit=10):
     return results[:limit]
 
 
-def find_cowork_sessions(base_dir=None, limit=10):
+def find_cowork_sessions(base_dir=None, limit=None):
     """Find recent Cowork session JSONL files.
 
     Reads session metadata from the platform-specific Claude Cowork directory:
@@ -186,7 +186,7 @@ def find_cowork_sessions(base_dir=None, limit=10):
         )
 
     results.sort(key=lambda x: x["mtime"], reverse=True)
-    return results[:limit]
+    return results[:limit] if limit is not None else results
 
 
 def get_project_display_name(folder_name):

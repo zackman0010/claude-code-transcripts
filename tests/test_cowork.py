@@ -239,8 +239,198 @@ def test_parse_jsonl_skips_is_synthetic(tmp_path):
     assert loglines[1]["type"] == "assistant"
 
 
-def test_cowork_command_passes_cowork_label(tmp_path):
-    """The cowork command passes transcript_label='Claude Cowork' to generate_html."""
+def make_code_session(tmp_path, name="session.jsonl"):
+    """Create a minimal Code session JSONL file."""
+    session_file = tmp_path / name
+    session_file.write_text(
+        '{"type":"summary","summary":"Test session"}\n'
+        '{"type":"user","timestamp":"2025-01-01T00:00:00Z","message":{"role":"user","content":"Hello"}}\n'
+    )
+    return session_file
+
+
+class TestLocalSourceFlag:
+    """Tests for the --source flag behavior in the local command."""
+
+    def cancel_select(self, mock_q):
+        mock_q.select.return_value.ask.return_value = None
+
+    def test_source_code_skips_cowork(self, tmp_path):
+        """--source code queries Code sessions and never calls find_cowork_sessions."""
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_local.return_value = []
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local", "--source", "code"])
+
+        assert result.exit_code == 0
+        mock_cowork.assert_not_called()
+
+    def test_source_cowork_skips_code(self, tmp_path):
+        """--source cowork queries Cowork sessions and never calls find_local_sessions."""
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_cowork.return_value = []
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local", "--source", "cowork"])
+
+        assert result.exit_code == 0
+        mock_local.assert_not_called()
+        mock_cowork.assert_called_once()
+
+    def test_source_path_uses_that_path_and_skips_cowork(self, tmp_path):
+        """--source <path> searches Code at that path and never calls find_cowork_sessions."""
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_local.return_value = []
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local", "--source", str(tmp_path)])
+
+        assert result.exit_code == 0
+        mock_local.assert_called_once_with(tmp_path, limit=10)
+        mock_cowork.assert_not_called()
+
+    def test_no_source_searches_both(self, tmp_path, monkeypatch):
+        """No --source calls both find_local_sessions and find_cowork_sessions."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        projects_dir.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_local.return_value = []
+            mock_cowork.return_value = []
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local"])
+
+        assert result.exit_code == 0
+        mock_local.assert_called_once()
+        mock_cowork.assert_called_once()
+
+    def test_limit_filled_by_code_skips_cowork(self, tmp_path, monkeypatch):
+        """When Code sessions fill the limit, find_cowork_sessions is not called."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        projects_dir.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        session_files = [make_code_session(tmp_path, f"s{i}.jsonl") for i in range(3)]
+
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_local.return_value = [(f, "Summary") for f in session_files]
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local", "--limit", "3"])
+
+        assert result.exit_code == 0
+        mock_cowork.assert_not_called()
+
+    def test_limit_not_filled_cowork_gets_remaining_slots(self, tmp_path, monkeypatch):
+        """When Code sessions don't fill the limit, Cowork is queried with remaining count."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        projects_dir.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        session_file = make_code_session(tmp_path)
+
+        runner = CliRunner()
+        with (
+            patch(
+                "claude_code_transcripts.commands.local.find_local_sessions"
+            ) as mock_local,
+            patch(
+                "claude_code_transcripts.commands.local.find_cowork_sessions"
+            ) as mock_cowork,
+            patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        ):
+            mock_local.return_value = [(session_file, "Summary")]
+            mock_cowork.return_value = []
+            self.cancel_select(mock_q)
+            result = runner.invoke(cli, ["local", "--limit", "3"])
+
+        assert result.exit_code == 0
+        mock_cowork.assert_called_once_with(limit=2)
+
+
+def test_code_command_proxies_to_local_with_code_source():
+    """The code command invokes local_cmd with source='code', skipping Cowork."""
+    with (
+        patch(
+            "claude_code_transcripts.commands.local.find_local_sessions"
+        ) as mock_local,
+        patch(
+            "claude_code_transcripts.commands.local.find_cowork_sessions"
+        ) as mock_cowork,
+        patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+    ):
+        mock_local.return_value = []
+        mock_q.select.return_value.ask.return_value = None
+        result = CliRunner().invoke(cli, ["code"])
+
+    assert result.exit_code == 0
+    mock_cowork.assert_not_called()
+
+
+def test_cowork_command_proxies_to_local_with_cowork_source():
+    """The cowork command invokes local_cmd with source='cowork', skipping Code."""
+    with (
+        patch(
+            "claude_code_transcripts.commands.local.find_local_sessions"
+        ) as mock_local,
+        patch(
+            "claude_code_transcripts.commands.local.find_cowork_sessions"
+        ) as mock_cowork,
+        patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+    ):
+        mock_cowork.return_value = []
+        mock_q.select.return_value.ask.return_value = None
+        result = CliRunner().invoke(cli, ["cowork"])
+
+    assert result.exit_code == 0
+    mock_local.assert_not_called()
+
+
+def test_local_command_passes_cowork_label_for_cowork_sessions(tmp_path):
+    """The local command passes transcript_label='Claude Cowork' for Cowork sessions."""
     _, jsonl_file = make_cowork_session(
         tmp_path,
         process_name="test-process",
@@ -254,21 +444,103 @@ def test_cowork_command_passes_cowork_label(tmp_path):
         "folders": ["/test"],
         "mtime": 1700000000.0,
     }
+    selected = {
+        "mtime": session["mtime"],
+        "size_kb": 1.0,
+        "source": "Cowork",
+        "title": session["title"],
+        "session_file": jsonl_file,
+        "transcript_label": "Claude Cowork",
+    }
 
     runner = CliRunner()
     with (
-        patch("claude_code_transcripts.cli.find_cowork_sessions") as mock_find,
-        patch("claude_code_transcripts.cli.questionary") as mock_q,
-        patch("claude_code_transcripts.cli.generate_html") as mock_gen,
+        patch(
+            "claude_code_transcripts.commands.local.find_cowork_sessions"
+        ) as mock_cowork,
+        patch(
+            "claude_code_transcripts.commands.local.find_local_sessions"
+        ) as mock_local,
+        patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        patch("claude_code_transcripts.commands.local.generate_html") as mock_gen,
     ):
-        mock_find.return_value = [session]
-        mock_q.select.return_value.ask.return_value = session
+        mock_cowork.return_value = [session]
+        mock_local.return_value = []
+        mock_q.select.return_value.ask.return_value = selected
         result = runner.invoke(
             cli,
-            ["cowork", "-o", str(output_dir)],
+            ["local", "-o", str(output_dir)],
         )
 
     assert result.exit_code == 0, result.output
     mock_gen.assert_called_once()
     call_kwargs = mock_gen.call_args
     assert call_kwargs.kwargs.get("transcript_label") == "Claude Cowork"
+
+
+def test_local_include_json_copies_jsonl_to_output(tmp_path):
+    """--json copies the session JSONL file into the output directory."""
+    session_file = make_code_session(tmp_path, "my-session.jsonl")
+    output_dir = tmp_path / "output"
+
+    selected = {
+        "mtime": session_file.stat().st_mtime,
+        "size_kb": 1.0,
+        "source": "Code",
+        "title": "Test session",
+        "session_file": session_file,
+        "transcript_label": "Claude Code",
+    }
+
+    runner = CliRunner()
+    with (
+        patch(
+            "claude_code_transcripts.commands.local.find_local_sessions"
+        ) as mock_local,
+        patch(
+            "claude_code_transcripts.commands.local.find_cowork_sessions"
+        ) as mock_cowork,
+        patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        patch("claude_code_transcripts.commands.local.generate_html"),
+    ):
+        mock_local.return_value = [(session_file, "Test session")]
+        mock_cowork.return_value = []
+        mock_q.select.return_value.ask.return_value = selected
+        result = runner.invoke(cli, ["local", "--json", "-o", str(output_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert (output_dir / "my-session.jsonl").exists()
+
+
+def test_local_without_json_does_not_copy_jsonl(tmp_path):
+    """Without --json the session JSONL file is not copied to the output directory."""
+    session_file = make_code_session(tmp_path, "my-session.jsonl")
+    output_dir = tmp_path / "output"
+
+    selected = {
+        "mtime": session_file.stat().st_mtime,
+        "size_kb": 1.0,
+        "source": "Code",
+        "title": "Test session",
+        "session_file": session_file,
+        "transcript_label": "Claude Code",
+    }
+
+    runner = CliRunner()
+    with (
+        patch(
+            "claude_code_transcripts.commands.local.find_local_sessions"
+        ) as mock_local,
+        patch(
+            "claude_code_transcripts.commands.local.find_cowork_sessions"
+        ) as mock_cowork,
+        patch("claude_code_transcripts.commands.local.questionary") as mock_q,
+        patch("claude_code_transcripts.commands.local.generate_html"),
+    ):
+        mock_local.return_value = [(session_file, "Test session")]
+        mock_cowork.return_value = []
+        mock_q.select.return_value.ask.return_value = selected
+        result = runner.invoke(cli, ["local", "-o", str(output_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert not (output_dir / "my-session.jsonl").exists()
