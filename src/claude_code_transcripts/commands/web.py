@@ -1,15 +1,17 @@
 import json
 import platform
-import tempfile
-import webbrowser
-from pathlib import Path
 
 import click
 import httpx
 import questionary
 
 from claude_code_transcripts.cli import cli
-from claude_code_transcripts.commands import interactive_options
+from claude_code_transcripts.commands import (
+    interactive_options,
+    open_in_browser,
+    publish_gist,
+    resolve_output,
+)
 
 from claude_code_transcripts.api import (
     enrich_sessions_with_repos,
@@ -20,9 +22,7 @@ from claude_code_transcripts.api import (
     get_org_uuid_from_config,
 )
 from claude_code_transcripts.html_generation import (
-    create_gist,
     generate_html,
-    inject_gist_preview_js,
 )
 
 
@@ -146,14 +146,8 @@ def web_cmd(
     except httpx.RequestError as e:
         raise click.ClickException(f"Network error: {e}")
 
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / session_id
-    elif output is None:
-        output = Path(tempfile.gettempdir()) / f"claude-session-{session_id}"
+    output, auto_open = resolve_output(output, output_auto, gist, session_id)
 
-    output = Path(output)
     click.echo(f"Generating HTML in {output}/...")
     generate_html(session_data.get("loglines", []), output, github_repo=repo)
 
@@ -168,13 +162,6 @@ def web_cmd(
         click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
 
     if gist:
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        publish_gist(output)
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+    open_in_browser(output, open_browser, auto_open)

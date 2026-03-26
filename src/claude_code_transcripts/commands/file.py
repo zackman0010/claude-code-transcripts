@@ -1,18 +1,20 @@
 import shutil
 import tempfile
-import webbrowser
 from pathlib import Path
 
 import click
 import httpx
 
 from claude_code_transcripts.cli import cli
-from claude_code_transcripts.commands import interactive_options
+from claude_code_transcripts.commands import (
+    interactive_options,
+    open_in_browser,
+    publish_gist,
+    resolve_output,
+)
 
 from claude_code_transcripts.html_generation import (
-    create_gist,
     generate_html,
-    inject_gist_preview_js,
 )
 from claude_code_transcripts.parser import parse_session_file
 
@@ -70,17 +72,9 @@ def file_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
             raise click.ClickException(f"File not found: {json_file}")
         url_name = None
 
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / (url_name or json_file_path.stem)
-    elif output is None:
-        output = (
-            Path(tempfile.gettempdir())
-            / f"claude-session-{url_name or json_file_path.stem}"
-        )
+    stem = url_name or json_file_path.stem
+    output, auto_open = resolve_output(output, output_auto, gist, stem)
 
-    output = Path(output)
     generate_html(parse_session_file(json_file_path), output, github_repo=repo)
 
     click.echo(f"Output: {output.resolve()}")
@@ -93,13 +87,6 @@ def file_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
 
     if gist:
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        publish_gist(output)
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+    open_in_browser(output, open_browser, auto_open)

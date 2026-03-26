@@ -1,13 +1,58 @@
 """Shared Click option decorators and utilities for commands."""
 
 import shutil
+import tempfile
+import webbrowser
 from pathlib import Path
 
 import click
 
-from claude_code_transcripts.html_generation import Project, Session
+from claude_code_transcripts.html_generation import (
+    Project,
+    Session,
+    create_gist,
+    inject_gist_preview_js,
+)
 from claude_code_transcripts.parser import parse_session_file
 from claude_code_transcripts.sessions import find_all_sessions, find_cowork_sessions
+
+
+def resolve_output(output, output_auto, gist, stem):
+    """Resolve the output directory and whether to auto-open the browser.
+
+    Args:
+        output: Explicit output path string, or None.
+        output_auto: Whether to auto-name the output dir using stem.
+        gist: Whether the gist flag is set (suppresses auto_open).
+        stem: Filename stem used for default naming.
+
+    Returns:
+        (output_path, auto_open) tuple.
+    """
+    auto_open = output is None and not gist and not output_auto
+    if output_auto:
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / stem
+    elif output is None:
+        output = Path(tempfile.gettempdir()) / f"claude-session-{stem}"
+    return Path(output), auto_open
+
+
+def publish_gist(output):
+    """Inject gist preview JS, upload to GitHub Gist, and print URLs."""
+    inject_gist_preview_js(output)
+    click.echo("Creating GitHub gist...")
+    gist_id, gist_url = create_gist(output)
+    preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+    click.echo(f"Gist: {gist_url}")
+    click.echo(f"Preview: {preview_url}")
+
+
+def open_in_browser(output, open_browser, auto_open):
+    """Open output/index.html in the default browser if requested."""
+    if open_browser or auto_open:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
 
 
 def collect_raw_projects(source, include_agents=False):

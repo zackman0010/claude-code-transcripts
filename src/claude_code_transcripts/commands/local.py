@@ -1,6 +1,4 @@
 import shutil
-import tempfile
-import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -8,12 +6,16 @@ import click
 import questionary
 
 from claude_code_transcripts.cli import cli
-from claude_code_transcripts.commands import local_options, source_option
+from claude_code_transcripts.commands import (
+    local_options,
+    open_in_browser,
+    publish_gist,
+    resolve_output,
+    source_option,
+)
 
 from claude_code_transcripts.html_generation import (
-    create_gist,
     generate_html,
-    inject_gist_preview_js,
 )
 from claude_code_transcripts.parser import parse_session_file
 from claude_code_transcripts.sessions import find_cowork_sessions, find_local_sessions
@@ -100,14 +102,8 @@ def local_cmd(
     session_file = selected["session_file"]
     transcript_label = selected["transcript_label"]
 
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / session_file.stem
-    elif output is None:
-        output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
+    output, auto_open = resolve_output(output, output_auto, gist, session_file.stem)
 
-    output = Path(output)
     generate_html(
         parse_session_file(session_file),
         output,
@@ -125,13 +121,6 @@ def local_cmd(
         click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
 
     if gist:
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        publish_gist(output)
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+    open_in_browser(output, open_browser, auto_open)
