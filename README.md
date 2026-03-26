@@ -248,6 +248,10 @@ To contribute to this tool, first checkout the code. You can run the tests using
 cd claude-code-transcripts
 uv run pytest
 ```
+To run tests with code coverage:
+```bash
+uv run pytest --cov=claude_code_transcripts --cov-report=term-missing
+```
 And run your local development copy of the tool like this:
 ```bash
 uv run claude-code-transcripts --help
