@@ -1,4 +1,3 @@
-import shutil
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -7,14 +6,14 @@ import click
 
 from claude_code_transcripts.cli import cli
 
-from claude_code_transcripts.html_generation import (
-    Project,
-    Session,
-    generate_batch_html,
+from claude_code_transcripts.html_generation import generate_batch_html
+from claude_code_transcripts.commands import (
+    build_project,
+    collect_raw_projects,
+    copy_jsonl_files,
+    output_options,
+    source_option,
 )
-from claude_code_transcripts.commands import output_options, source_option
-from claude_code_transcripts.parser import parse_session_file
-from claude_code_transcripts.sessions import find_all_sessions, find_cowork_sessions
 
 
 @cli.command("all")
@@ -44,43 +43,15 @@ def all_cmd(output, include_json, open_browser, source, include_agents, dry_run,
     - Per-project pages listing sessions
     - Individual session transcripts
     """
-    output = Path(output) if output else Path("./claude-archive")
-    raw_projects = []
-
-    if source != "cowork":
+    if not quiet and source != "cowork":
         code_folder = (
             Path.home() / ".claude" / "projects"
             if source in (None, "code")
             else Path(source)
         )
-        if not code_folder.exists():
-            raise click.ClickException(f"Source directory not found: {code_folder}")
-        if not quiet:
-            click.echo(f"Scanning {code_folder}...")
-        raw_projects = find_all_sessions(code_folder, include_agents=include_agents)
+        click.echo(f"Scanning {code_folder}...")
 
-    if source in (None, "cowork"):
-        raw_cowork = find_cowork_sessions()
-        if raw_cowork:
-            cowork_sessions = []
-            for session in raw_cowork:
-                jsonl_path = session["jsonl_path"]
-                stat = jsonl_path.stat()
-                cowork_sessions.append(
-                    {
-                        "path": jsonl_path,
-                        "summary": session["title"],
-                        "mtime": session["mtime"],
-                        "size": stat.st_size,
-                        "transcript_label": "Claude Cowork",
-                    }
-                )
-            raw_projects.append(
-                {
-                    "name": "Cowork",
-                    "sessions": cowork_sessions,
-                }
-            )
+    raw_projects = collect_raw_projects(source, include_agents=include_agents)
 
     if not raw_projects:
         if not quiet:
@@ -108,31 +79,12 @@ def all_cmd(output, include_json, open_browser, source, include_agents, dry_run,
                     click.echo(f"    ... and {len(project['sessions']) - 3} more")
         return
 
+    output = Path(output) if output else Path("./claude-archive")
+
     if not quiet:
         click.echo(f"\nParsing sessions...")
 
-    projects = []
-    for raw_project in raw_projects:
-        project_dir = output / raw_project["name"]
-        sessions = []
-        for raw_session in raw_project["sessions"]:
-            session_name = raw_session["path"].stem
-            session_dir = project_dir / session_name
-            loglines = parse_session_file(raw_session["path"])
-            sessions.append(
-                Session(
-                    name=session_name,
-                    session_dir=session_dir,
-                    loglines=loglines,
-                    size_kb=raw_session["size"] / 1024,
-                    transcript_label=raw_session.get("transcript_label", "Claude Code"),
-                )
-            )
-        projects.append(
-            Project(
-                name=raw_project["name"], project_dir=project_dir, sessions=sessions
-            )
-        )
+    projects = [build_project(raw, output) for raw in raw_projects]
 
     if not quiet:
         click.echo(f"Generating archive in {output}...")
@@ -149,11 +101,7 @@ def all_cmd(output, include_json, open_browser, source, include_agents, dry_run,
 
     if include_json:
         for raw_project in raw_projects:
-            for raw_session in raw_project["sessions"]:
-                session_name = raw_session["path"].stem
-                session_dir = output / raw_project["name"] / session_name
-                json_dest = session_dir / raw_session["path"].name
-                shutil.copy(raw_session["path"], json_dest)
+            copy_jsonl_files(raw_project, output)
 
     if stats["failed_sessions"]:
         click.echo(f"\nWarning: {len(stats['failed_sessions'])} session(s) failed:")

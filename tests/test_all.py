@@ -485,7 +485,7 @@ class TestAllCommand:
 
         runner = CliRunner()
         with patch(
-            "claude_code_transcripts.commands.all.find_cowork_sessions"
+            "claude_code_transcripts.commands.find_cowork_sessions"
         ) as mock_cowork:
             mock_cowork.return_value = [cowork_session]
             result = runner.invoke(
@@ -546,9 +546,9 @@ class TestAllSourceFlag:
         """--source code queries Code sessions and never calls find_cowork_sessions."""
         runner = CliRunner()
         with (
-            patch("claude_code_transcripts.commands.all.find_all_sessions") as mock_all,
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
             patch(
-                "claude_code_transcripts.commands.all.find_cowork_sessions"
+                "claude_code_transcripts.commands.find_cowork_sessions"
             ) as mock_cowork,
         ):
             mock_all.return_value = []
@@ -562,9 +562,9 @@ class TestAllSourceFlag:
         """--source cowork queries Cowork sessions and never calls find_all_sessions."""
         runner = CliRunner()
         with (
-            patch("claude_code_transcripts.commands.all.find_all_sessions") as mock_all,
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
             patch(
-                "claude_code_transcripts.commands.all.find_cowork_sessions"
+                "claude_code_transcripts.commands.find_cowork_sessions"
             ) as mock_cowork,
         ):
             mock_cowork.return_value = []
@@ -578,9 +578,9 @@ class TestAllSourceFlag:
         """--source <path> searches Code at that path and never calls find_cowork_sessions."""
         runner = CliRunner()
         with (
-            patch("claude_code_transcripts.commands.all.find_all_sessions") as mock_all,
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
             patch(
-                "claude_code_transcripts.commands.all.find_cowork_sessions"
+                "claude_code_transcripts.commands.find_cowork_sessions"
             ) as mock_cowork,
         ):
             mock_all.return_value = []
@@ -598,9 +598,9 @@ class TestAllSourceFlag:
 
         runner = CliRunner()
         with (
-            patch("claude_code_transcripts.commands.all.find_all_sessions") as mock_all,
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
             patch(
-                "claude_code_transcripts.commands.all.find_cowork_sessions"
+                "claude_code_transcripts.commands.find_cowork_sessions"
             ) as mock_cowork,
         ):
             mock_all.return_value = []

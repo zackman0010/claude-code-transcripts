@@ -1,6 +1,97 @@
-"""Shared Click option decorators for commands."""
+"""Shared Click option decorators and utilities for commands."""
+
+import shutil
+from pathlib import Path
 
 import click
+
+from claude_code_transcripts.html_generation import Project, Session
+from claude_code_transcripts.parser import parse_session_file
+from claude_code_transcripts.sessions import find_all_sessions, find_cowork_sessions
+
+
+def collect_raw_projects(source, include_agents=False):
+    """Discover raw project dicts from the given source.
+
+    Args:
+        source: 'code', 'cowork', None (both), or a path string.
+        include_agents: Whether to include agent-* session files.
+
+    Returns:
+        List of raw project dicts, each with 'name' and 'sessions'.
+    """
+    raw_projects = []
+
+    if source != "cowork":
+        code_folder = (
+            Path.home() / ".claude" / "projects"
+            if source in (None, "code")
+            else Path(source)
+        )
+        if not code_folder.exists():
+            raise click.ClickException(f"Source directory not found: {code_folder}")
+        raw_projects = find_all_sessions(code_folder, include_agents=include_agents)
+
+    if source in (None, "cowork"):
+        raw_cowork = find_cowork_sessions()
+        if raw_cowork:
+            cowork_sessions = []
+            for session in raw_cowork:
+                jsonl_path = session["jsonl_path"]
+                stat = jsonl_path.stat()
+                cowork_sessions.append(
+                    {
+                        "path": jsonl_path,
+                        "summary": session["title"],
+                        "mtime": session["mtime"],
+                        "size": stat.st_size,
+                        "transcript_label": "Claude Cowork",
+                    }
+                )
+            raw_projects.append({"name": "Cowork", "sessions": cowork_sessions})
+
+    return raw_projects
+
+
+def build_project(raw_project, output):
+    """Build a Project object (with Sessions) from a raw project dict.
+
+    Args:
+        raw_project: Dict with 'name' and 'sessions' (each having 'path', 'size', etc.).
+        output: Base output directory; project files go in output/name/.
+
+    Returns:
+        A Project instance ready for generate_batch_html.
+    """
+    project_dir = output / raw_project["name"]
+    sessions = []
+    for raw_session in raw_project["sessions"]:
+        session_name = raw_session["path"].stem
+        loglines = parse_session_file(raw_session["path"])
+        sessions.append(
+            Session(
+                name=session_name,
+                session_dir=project_dir / session_name,
+                loglines=loglines,
+                size_kb=raw_session["size"] / 1024,
+                transcript_label=raw_session.get("transcript_label", "Claude Code"),
+            )
+        )
+    return Project(name=raw_project["name"], project_dir=project_dir, sessions=sessions)
+
+
+def copy_jsonl_files(raw_project, output):
+    """Copy source JSONL files into each session's output directory.
+
+    Args:
+        raw_project: Dict with 'name' and 'sessions'.
+        output: Base output directory matching what was passed to generate_batch_html.
+    """
+    project_dir = output / raw_project["name"]
+    for raw_session in raw_project["sessions"]:
+        session_name = raw_session["path"].stem
+        session_dir = project_dir / session_name
+        shutil.copy(raw_session["path"], session_dir / raw_session["path"].name)
 
 
 def output_options(func):
